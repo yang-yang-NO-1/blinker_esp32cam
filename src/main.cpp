@@ -48,19 +48,24 @@
 
 #include <Blinker.h>
 #include "ESP32_CAM_SERVER.h"
+#include <Adafruit_NeoPixel.h>
 
 char auth[] = "e8ea2877eef7";
 char ssid[] = "dell";
 char pswd[] = "1136759016";
 bool setup_camera = false;
-int trim = 0;
+int trim = 4;
 
-#define JOY_1 "JOYKey"
 // Define Servos
 const int ServoPinL = 13; // Left Servo assigned to GPIO 13
 const int ServoPinR = 14; // Right Servo assigned to GPIO 14
+// Define ws2812b
+#define PIN 12
+#define NUMPIXELS 3
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
 BlinkerJoystick JOY1("JOY_1");
+BlinkerRGB WS2812("RGB");
 
 void initServo() // Here we setup PWM, and attach it to physical pins.
 {
@@ -68,6 +73,23 @@ void initServo() // Here we setup PWM, and attach it to physical pins.
   ledcSetup(4, 50, 16);        // 50 hz PWM, 16-bit resolution. Pulse width is represented as integer fraction of 65536 ie 2ms = 6553.
   ledcAttachPin(ServoPinL, 3); // Attach PWM 3 to GPIO 12
   ledcAttachPin(ServoPinR, 4); // Attach PWM 4 to GPIO 13
+}
+
+void ws2812_callback(uint8_t r_value, uint8_t g_value, uint8_t b_value, uint8_t bright_value)
+{
+  digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+  BLINKER_LOG("R value: ", r_value);
+  BLINKER_LOG("G value: ", g_value);
+  BLINKER_LOG("B value: ", b_value);
+  BLINKER_LOG("Rrightness value: ", bright_value);
+
+  pixels.setBrightness(bright_value);
+
+  for (int i = 0; i < NUMPIXELS; i++)
+  {
+    pixels.setPixelColor(i, r_value, g_value, b_value);
+  }
+  pixels.show();
 }
 
 void joystick1_callback(uint8_t xAxis, uint8_t yAxis)
@@ -183,9 +205,6 @@ void setup()
   Serial.begin(115200);
   BLINKER_DEBUG.stream(Serial);
 
-  // pinMode(LED_BUILTIN, OUTPUT);
-  // digitalWrite(LED_BUILTIN, LOW);
-
   // Blinker.begin(auth);
   Blinker.begin(auth, ssid, pswd);
   Blinker.attachData(dataRead);
@@ -196,20 +215,29 @@ void setup()
   Slider4.attach(slider4_callback);
   Button1.attach(button1_callback);
   Button2.attach(button2_callback);
-
-  // drop down frame size for higher initial frame rate
-  // sensor_t *s = esp_camera_sensor_get();
-  // s->set_framesize(s, FRAMESIZE_QVGA);
-  // s->set_vflip(s, 1);
-  // s->set_hmirror(s, 1);
+  Slider1.print(0);
+  Slider2.print(10);
+  Slider3.print(10);
+  Slider4.print(5);
 
   // Initialize Servos & LEDs
   initServo();
   ledcSetup(7, 5000, 8);
-  // ledcAttachPin(4, 7); // GPIO 4 is LED(板载补光灯)
+  ledcAttachPin(4, 7); // GPIO 4 is LED(板载补光灯)
   pinMode(33, OUTPUT); // GPIO 33 is LED（板子led）
   digitalWrite(33, 0);
   ledcAttachPin(2, 7); // GPIO 2 is LED（小车前照灯）
+
+  for (int i = 0; i < 5; i++) // Flash LED as ready indicator
+  {
+    ledcWrite(7, 0); // flash led
+    delay(200);
+    ledcWrite(7, 10);
+    delay(200);
+  }
+  ledcDetachPin(4);
+  pixels.begin();
+  WS2812.attach(ws2812_callback);
 }
 
 void loop()
@@ -220,7 +248,7 @@ void loop()
   {
     setupCamera();
     setup_camera = true;
-
+    digitalWrite(33, 1);
     Blinker.printObject("video", "{\"str\":\"mjpg\",\"url\":\"http://" + WiFi.localIP().toString() + "\"}");
   }
 }
